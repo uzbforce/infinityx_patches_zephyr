@@ -107,6 +107,15 @@ images (`boot.img`, `init_boot.img`, `vendor_boot.img`, `dtbo.img`, `vbmeta.img`
 `recovery.img`, `system.img`, `vendor.img`, `product.img`, `system_ext.img`,
 `odm.img`, `vendor_dlkm.img`, `system_dlkm.img`) in the same directory.
 
+### GMS build
+
+The product defaults to VANILLA. For a GMS/GAPPS OTA, set
+`WITH_GAPPS := true` and `WITH_GMS := true` in
+`device/xiaomi/zephyr/infinity_zephyr.mk` (the two lines under the "No GMS yet"
+comment), run `mka bacon`, then set them back to `false` if you want the next
+build to be VANILLA. The package is named `...-GAPPS-<build type>.zip`; the
+stock spoof and `UNOFFICIAL` status are unchanged.
+
 ## Flashing the build
 
 The OTA is signed with the local `releasekey`. Sideload it with the recovery
