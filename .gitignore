@@ -1,0 +1,6 @@
+# Private signing material. keys.mk and the public certificates are tracked;
+# the private keys are not. See README "Signing".
+keys/*.pem
+keys/*.pk8
+keys/avb_pkmd.bin
+!keys/*.x509.pem

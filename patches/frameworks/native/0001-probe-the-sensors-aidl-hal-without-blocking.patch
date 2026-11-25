@@ -1,0 +1,87 @@
+diff --git a/services/sensorservice/AidlSensorHalWrapper.cpp b/services/sensorservice/AidlSensorHalWrapper.cpp
+index 9c54cb9..c47bd2a 100644
+--- a/services/sensorservice/AidlSensorHalWrapper.cpp
++++ b/services/sensorservice/AidlSensorHalWrapper.cpp
+@@ -25,6 +25,9 @@
+ #include <android-base/logging.h>
+ #include <android/binder_manager.h>
+ 
++#include <chrono>
++#include <thread>
++
+ using ::aidl::android::hardware::sensors::AdditionalInfo;
+ using ::aidl::android::hardware::sensors::DynamicSensorInfo;
+ using ::aidl::android::hardware::sensors::Event;
+@@ -112,9 +115,16 @@ bool AidlSensorHalWrapper::connect(SensorDeviceCallback *callback) {
+             AIBinder_unlinkToDeath(mSensors->asBinder().get(), mDeathRecipient.get(), this);
+         }
+ 
+-        constexpr int kMaxRetry = 20;
++        // A declared HAL is not necessarily installed: a vendor VINTF fragment
++        // can advertise the AIDL interface while the image still runs the
++        // HIDL implementation. waitForService() blocks for 5 s per call, and
++        // the 20 retries this used to do kept the system_server main thread in
++        // nativeCreate() for over 100 s, so the watchdog killed system_server
++        // before boot completed. Probe briefly instead and let SensorDevice
++        // fall back to HidSensorHalWrapper.
++        constexpr int kMaxRetry = 5;
+         for (int i = 0; i < kMaxRetry; ++i) {
+-            ndk::SpAIBinder binder(AServiceManager_waitForService(aidlServiceName.c_str()));
++            ndk::SpAIBinder binder(AServiceManager_getService(aidlServiceName.c_str()));
+             if (binder.get() != nullptr) {
+                 mSensors = ISensors::fromBinder(binder);
+                 if (mSensors != nullptr) {
+@@ -122,11 +132,13 @@ bool AidlSensorHalWrapper::connect(SensorDeviceCallback *callback) {
+                 }
+             }
+             ALOGW("Failed to get ISensors, retry counter: %d", i);
++            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+         }
+ 
+-        LOG_ALWAYS_FATAL_IF(mSensors == nullptr,
+-                            "Could not connect to declared sensors AIDL HAL after %d retries",
+-                            kMaxRetry);
++        if (mSensors == nullptr) {
++            ALOGW("Declared sensors AIDL HAL never registered; falling back to HIDL");
++            return false;
++        }
+ 
+         mEventQueue = std::make_unique<
+                 AidlMessageQueue<Event, SynchronizedReadWrite>>(MAX_RECEIVE_BUFFER_EVENT_COUNT,
+diff --git a/services/sensorservice/HidlSensorHalWrapper.cpp b/services/sensorservice/HidlSensorHalWrapper.cpp
+index 8c867bd..9792d60 100644
+--- a/services/sensorservice/HidlSensorHalWrapper.cpp
++++ b/services/sensorservice/HidlSensorHalWrapper.cpp
+@@ -422,8 +422,13 @@ ISensorHalWrapper::HalConnectionStatus HidlSensorHalWrapper::connectHidlServiceV
+     HalConnectionStatus connectionStatus = HalConnectionStatus::UNKNOWN;
+ 
+     while (retry-- > 0) {
++        // getService() does not return when the interface is declared in VINTF
++        // but the HAL is not running (see getRawServiceInternal(); the retry
++        // loop waits on a Waiter indefinitely). That turned a missing HIDL HAL
++        // into a system_server watchdog kill during boot, so probe with
++        // tryGetService() instead.
+         sp<android::hardware::sensors::V1_0::ISensors> sensors =
+-                android::hardware::sensors::V1_0::ISensors::getService();
++                android::hardware::sensors::V1_0::ISensors::tryGetService();
+         if (sensors == nullptr) {
+             // no sensor hidl service found
+             connectionStatus = HalConnectionStatus::DOES_NOT_EXIST;
+@@ -454,7 +459,7 @@ ISensorHalWrapper::HalConnectionStatus HidlSensorHalWrapper::connectHidlServiceV
+ ISensorHalWrapper::HalConnectionStatus HidlSensorHalWrapper::connectHidlServiceV2_0() {
+     HalConnectionStatus connectionStatus = HalConnectionStatus::UNKNOWN;
+     sp<android::hardware::sensors::V2_0::ISensors> sensors =
+-            android::hardware::sensors::V2_0::ISensors::getService();
++            android::hardware::sensors::V2_0::ISensors::tryGetService();
+ 
+     if (sensors == nullptr) {
+         connectionStatus = HalConnectionStatus::DOES_NOT_EXIST;
+@@ -469,7 +474,7 @@ ISensorHalWrapper::HalConnectionStatus HidlSensorHalWrapper::connectHidlServiceV
+ ISensorHalWrapper::HalConnectionStatus HidlSensorHalWrapper::connectHidlServiceV2_1() {
+     HalConnectionStatus connectionStatus = HalConnectionStatus::UNKNOWN;
+     sp<android::hardware::sensors::V2_1::ISensors> sensors =
+-            android::hardware::sensors::V2_1::ISensors::getService();
++            android::hardware::sensors::V2_1::ISensors::tryGetService();
+ 
+     if (sensors == nullptr) {
+         connectionStatus = HalConnectionStatus::DOES_NOT_EXIST;

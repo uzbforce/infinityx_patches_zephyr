@@ -1,0 +1,343 @@
+diff --git a/AndroidProducts.mk b/AndroidProducts.mk
+index a4924dc..320af58 100644
+--- a/AndroidProducts.mk
++++ b/AndroidProducts.mk
+@@ -4,9 +4,9 @@
+ #
+ 
+ PRODUCT_MAKEFILES := \
+-    $(LOCAL_DIR)/lineage_zephyr.mk
++    $(LOCAL_DIR)/infinity_zephyr.mk
+ 
+ COMMON_LUNCH_CHOICES := \
+-    lineage_zephyr-user \
+-    lineage_zephyr-userdebug \
+-    lineage_zephyr-eng
++    infinity_zephyr-user \
++    infinity_zephyr-userdebug \
++    infinity_zephyr-eng
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index 34fa7fe..4a33428 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -156,8 +156,8 @@ BOARD_KERNEL_CMDLINE := \
+     rcu_normal=1 \
+     rcu_expedited=1 \
+     kasan=off \
+-    bootinfo.fingerprint=$(LINEAGE_VERSION) \
+-    swinfo.fingerprint=$(LINEAGE_VERSION)
++    bootinfo.fingerprint=$(TARGET_PRODUCT)-$(TARGET_BUILD_VARIANT) \
++    swinfo.fingerprint=$(TARGET_PRODUCT)-$(TARGET_BUILD_VARIANT)
+ 
+ # The overlays live in dtbo.img. The base devicetree is not appended to boot:
+ # with header v4 it is the dtb section of vendor_boot.img, and that is where the
+@@ -409,30 +409,30 @@ BOARD_AVB_ENABLE                 := true
+ # vbmeta_system images. Without these two lines it falls back to AOSP's public
+ # testkey while the chained images use the private key.
+ BOARD_AVB_ALGORITHM              := SHA256_RSA4096
+-BOARD_AVB_KEY_PATH               := vendor/lineage-priv/keys/avb.pem
++BOARD_AVB_KEY_PATH               := vendor/infinity-priv/keys/avb.pem
+ BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS += --flags 3
+ # The GSI public keys are referenced by fstab's avb_keys before any dynamic
+ # partition is mounted. Keep them in the vendor ramdisk, not /system.
+ BOARD_MOVE_GSI_AVB_KEYS_TO_VENDOR_BOOT := true
+ 
+ BOARD_AVB_RECOVERY_ALGORITHM             := SHA256_RSA4096
+-BOARD_AVB_RECOVERY_KEY_PATH              := vendor/lineage-priv/keys/avb.pem
++BOARD_AVB_RECOVERY_KEY_PATH              := vendor/infinity-priv/keys/avb.pem
+ BOARD_AVB_RECOVERY_ROLLBACK_INDEX        := $(PLATFORM_SECURITY_PATCH_TIMESTAMP)
+ BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION := 1
+ 
+ BOARD_AVB_DTBO_ALGORITHM             := SHA256_RSA4096
+-BOARD_AVB_DTBO_KEY_PATH              := vendor/lineage-priv/keys/avb.pem
++BOARD_AVB_DTBO_KEY_PATH              := vendor/infinity-priv/keys/avb.pem
+ BOARD_AVB_DTBO_ROLLBACK_INDEX        := $(PLATFORM_SECURITY_PATCH_TIMESTAMP)
+ BOARD_AVB_DTBO_ROLLBACK_INDEX_LOCATION := 3
+ 
+ BOARD_AVB_BOOT_ALGORITHM             := SHA256_RSA4096
+-BOARD_AVB_BOOT_KEY_PATH              := vendor/lineage-priv/keys/avb.pem
++BOARD_AVB_BOOT_KEY_PATH              := vendor/infinity-priv/keys/avb.pem
+ BOARD_AVB_BOOT_ROLLBACK_INDEX        := $(PLATFORM_SECURITY_PATCH_TIMESTAMP)
+ BOARD_AVB_BOOT_ROLLBACK_INDEX_LOCATION := 4
+ 
+ BOARD_AVB_VBMETA_SYSTEM                          := product system system_dlkm system_ext
+ BOARD_AVB_VBMETA_SYSTEM_ALGORITHM                := SHA256_RSA4096
+-BOARD_AVB_VBMETA_SYSTEM_KEY_PATH                 := vendor/lineage-priv/keys/avb.pem
++BOARD_AVB_VBMETA_SYSTEM_KEY_PATH                 := vendor/infinity-priv/keys/avb.pem
+ BOARD_AVB_VBMETA_SYSTEM_ROLLBACK_INDEX           := $(PLATFORM_SECURITY_PATCH_TIMESTAMP)
+ BOARD_AVB_VBMETA_SYSTEM_ROLLBACK_INDEX_LOCATION  := 2
+ 
+diff --git a/configs/init/android.hardware.sensors@2.1-service-multihal.rc b/configs/init/android.hardware.sensors@2.1-service-multihal.rc
+new file mode 100644
+index 0000000..de39d54
+--- /dev/null
++++ b/configs/init/android.hardware.sensors@2.1-service-multihal.rc
+@@ -0,0 +1,15 @@
++# The stock HIDL sensors multihal and the AIDL multihal from hardware/xiaomi
++# both serve android.hardware.sensors and both load the same sub-HALs
++# (sensors.ssc.so, sensors.touch.detect.so, sensors.xiaomi.zephyr.udfps.so).
++# The AIDL service is the one this product declares in VINTF and the one the
++# framework uses, so keep the stock service definition (the binary still
++# ships) but never start it: with both running, the HIDL instance stays
++# blocked in sub-HAL initialize() and takes the SSC registry down with it.
++service vendor.sensors-hal-2-1-multihal /vendor/bin/hw/android.hardware.sensors@2.1-service.multihal
++    class hal
++    user system
++    group system wakelock context_hub input
++    task_profiles ServiceCapacityLow
++    capabilities BLOCK_SUSPEND
++    rlimit rtprio 10 10
++    disabled
+diff --git a/configs/properties/product.prop b/configs/properties/product.prop
+index b48a601..8a0b06f 100644
+--- a/configs/properties/product.prop
++++ b/configs/properties/product.prop
+@@ -21,3 +21,11 @@ bluetooth.profile.opp.enabled=true
+ bluetooth.profile.pan.nap.enabled=true
+ bluetooth.profile.pan.panu.enabled=true
+ bluetooth.profile.pbap.server.enabled=true
++
++# Infinity X About Phone definitions. These live in a .prop file because a
++# PRODUCT_*PROPERTIES value is a make word list and the spaces in the model,
++# SoC and camera names would be split there; this file is installed verbatim.
++ro.product.marketname=Redmi Note 17 4G
++ro.infinity.codename=zephyr
++ro.infinity.soc=Snapdragon 6s Gen2
++ro.infinity.camera=50MP + 16MP
+diff --git a/device.mk b/device.mk
+index a3cb75c..b5eabb4 100644
+--- a/device.mk
++++ b/device.mk
+@@ -90,6 +90,12 @@ PRODUCT_SOONG_NAMESPACES += \
+ # blob requires it.
+ PRODUCT_SOONG_NAMESPACES += device/xiaomi/zephyr
+ 
++# Lineage's Xiaomi hardware repo carries the UDFPS handler library and the
++# sensors multihal this product lists. Its root Android.bp declares an empty
++# soong_namespace, so the directory has to be imported or the modules are
++# invisible and PRODUCT_PACKAGES silently skips them.
++PRODUCT_SOONG_NAMESPACES += hardware/xiaomi
++
+ PRODUCT_CHARACTERISTICS := nosdcard
+ 
+ # ---------------------------------------------------------------------------
+@@ -317,8 +323,11 @@ PRODUCT_PACKAGES += \
+ # ---------------------------------------------------------------------------
+ # Fingerprint — Goodix FOD, HAL is a vendor prebuilt
+ # ---------------------------------------------------------------------------
+-PRODUCT_PACKAGES += \
+-    libudfpshandler
++# The AIDL HAL (hardware/lineage/interfaces) drives the stock
++# fingerprint.goodix_fod.so directly and dlopens libmifpext.so for local HBM.
++# The old libudfpshandler wrapper is not built by the current Lineage
++# hardware/xiaomi tree and the HIDL service that used it is not shipped, so
++# there is nothing to install here.
+ 
+ # ---------------------------------------------------------------------------
+ # Gatekeeper / keymaster / keymint
+@@ -465,6 +474,13 @@ PRODUCT_PACKAGES += \
+     sensors.xiaomi.v2 \
+     sensors.xiaomi.zephyr.udfps
+ 
++# The stock HIDL sensors multihal is also shipped by the vendor blobs, and
++# both HALs load the same sub-HALs. Override its init rc with a disabled
++# definition so only the AIDL multihal runs; see the rc for the failure mode
++# when both are started.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/configs/init/android.hardware.sensors@2.1-service-multihal.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/android.hardware.sensors@2.1-service-multihal.rc
++
+ # ---------------------------------------------------------------------------
+ # Thermal
+ # ---------------------------------------------------------------------------
+diff --git a/infinity_zephyr.mk b/infinity_zephyr.mk
+new file mode 100644
+index 0000000..589cd1c
+--- /dev/null
++++ b/infinity_zephyr.mk
+@@ -0,0 +1,78 @@
++#
++# SPDX-FileCopyrightText: The LineageOS Project
++# SPDX-License-Identifier: Apache-2.0
++#
++
++# Inherit from those products. Most specific first.
++#
++# Still core_64_bit_only.mk: stock runs zygote64_32, but this tree cannot build
++# a 32-bit world yet (the installed kernel uapi headers are arm64-only, and the
++# stock vendor blobs are declared 64-bit-only). See the device tree README.
++$(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit_only.mk)
++$(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
++
++# ---------------------------------------------------------------------------
++# Infinity X configuration
++#
++# These must be set before vendor/infinity/config/common.mk is inherited:
++# common.mk defaults WITH_GAPPS to true and only hard-includes the release
++# keys when the build type is OFFICIAL.
++# ---------------------------------------------------------------------------
++INFINITY_BUILD       := zephyr
++INFINITY_BUILD_TYPE  := UNOFFICIAL
++INFINITY_MAINTAINER  := uzbforce
++
++# No GMS yet: the VANILLA product keeps the full Infinity X feature set and
++# ships without Play services/Play Store/SetupWizard.
++WITH_GAPPS := false
++WITH_GMS   := false
++
++# Fingerprint on display. This selects Infinity's UDFPS theme overlay and the
++# screen-off UDFPS defaults the framework reads from the device overlay.
++TARGET_HAS_UDFPS := true
++
++# Inherit from Infinity X common configuration
++$(call inherit-product, vendor/infinity/config/common_full_phone.mk)
++
++# Inherit the hardware configuration for the actual device
++$(call inherit-product, device/xiaomi/zephyr/device.mk)
++
++# Signing keys, when present. common.mk already includes these for OFFICIAL
++# builds; the -include keeps a local build working when the keys are absent.
++-include vendor/infinity-priv/keys/keys.mk
++
++# ---------------------------------------------------------------------------
++# Identity
++# ---------------------------------------------------------------------------
++PRODUCT_NAME         := infinity_zephyr
++PRODUCT_DEVICE       := zephyr
++PRODUCT_MANUFACTURER := Xiaomi
++PRODUCT_BRAND        := Redmi
++PRODUCT_MODEL        := Redmi Note 17 4G
++
++PRODUCT_SYSTEM_NAME   := zephyr_global
++PRODUCT_SYSTEM_DEVICE := zephyr
++
++# Stock images are EROFS
++WITH_EROFS := true
++
++# Impersonate the stock firmware. Infinity's gen_build_prop.py reports every
++# non-eng build as `user`, and init's SPOOF_SAFETYNET path repeats the same
++# values at boot. The vendor blobs and Play Integrity checks were tested
++# against this identity, and this is an unofficial Android 17 port of the
++# stock Android 16 firmware, so it keeps reporting the stock build. ADB
++# authentication is therefore on: authorize the host in SystemUI after the
++# first boot.
++PRODUCT_BUILD_PROP_OVERRIDES += \
++    BuildDesc="zephyr_global-user 16 BP2A.250605.031.A3 OS3.0.310.0.WBUMIXM release-keys" \
++    BuildFingerprint=Redmi/zephyr_global/zephyr:16/BP2A.250605.031.A3/OS3.0.310.0.WBUMIXM:user/release-keys
++
++PRODUCT_GMS_CLIENTID_BASE := android-xiaomi
++
++# ---------------------------------------------------------------------------
++# Display: 1080x2280 AMOLED, 120 Hz (verified from the stock DTBs)
++# ---------------------------------------------------------------------------
++TARGET_SUPPORTED_REFRESH_RATES := 60,90,120
++
++$(call soong_config_set,surfaceflinger,frame_rate_category_high,120)
++$(call soong_config_set,surfaceflinger,frame_rate_category_min,60)
+diff --git a/proprietary-files.txt b/proprietary-files.txt
+index 8aabc4d..278c4a3 100644
+--- a/proprietary-files.txt
++++ b/proprietary-files.txt
+@@ -2261,7 +2261,8 @@ vendor/etc/init/android.hardware.cas@1.2-service.rc
+ vendor/etc/init/android.hardware.health-service.qti.rc
+ vendor/etc/init/android.hardware.ir-service.example.rc
+ vendor/etc/init/android.hardware.media.omx@1.0-service.rc
+-vendor/etc/init/android.hardware.sensors@2.1-service-multihal.rc
++# NOT extracted: replaced by configs/init/android.hardware.sensors@2.1-service-multihal.rc,
++# which keeps the stock HIDL service disabled in favour of the AIDL multihal.
+ vendor/etc/init/android.hardware.usb.gadget@1.1-service-qti.rc
+ vendor/etc/init/android.hardware.usb@1.2-service-qti.rc
+ -vendor/etc/init/android.hardware.wifi.supplicant-service.rc
+diff --git a/sepolicy/vendor/file.te b/sepolicy/vendor/file.te
+index 1f2ca8c..782c2c5 100644
+--- a/sepolicy/vendor/file.te
++++ b/sepolicy/vendor/file.te
+@@ -49,3 +49,25 @@ type xiaomi_touch_device, dev_type;
+ #   sscrpcd: apps_std_fopen_with_env failed with 0xd for
+ #     proc/tp_proximity_switch (Permission denied)
+ type proc_tp_proximity_data, fs_type, proc_type;
++
++# The touch controller's chip_name node, read by sscrpcd before it brings the
++# SSC sensor registry up. Stock labels this exact I2C path sysfs_chip_name;
++# this build's policy comes from device/qcom/sepolicy_vndr/sm6225, which does
++# not know zephyr's bus number, so the node falls back to the generic sysfs
++# label and the daemon is denied on every startup pass:
++#
++#   avc: denied { read } for comm="sscrpcd" name="chip_name" dev="sysfs"
++#     scontext=u:r:vendor_sensors:s0 tcontext=u:object_r:sysfs:s0 tclass=file
++#
++# The read gates the touch-detect configuration, so the SSC registry never
++# becomes ready and the sensors HAL stays blocked in sub-HAL initialize().
++type sysfs_chip_name, sysfs_type;
++
++# /sys/devices/virtual/touch/touch_dev/palm_sensor, written by the touch
++# detect sub-HAL to enable palm rejection. Stock labels it
++# vendor_sysfs_touch_node; without the label the write lands on the generic
++# sysfs type and is denied (see vendor_sensors.te):
++#
++#   avc: denied { write } for comm="android.hardwar" name="palm_sensor"
++#     scontext=u:r:hal_sensors_default:s0 tcontext=u:object_r:sysfs:s0 tclass=file
++type vendor_sysfs_touch_node, sysfs_type;
+diff --git a/sepolicy/vendor/file_contexts b/sepolicy/vendor/file_contexts
+index b4948d5..7974737 100644
+--- a/sepolicy/vendor/file_contexts
++++ b/sepolicy/vendor/file_contexts
+@@ -59,6 +59,17 @@
+ # in displayfeature.te.
+ /dev/mi_display/disp_feature      u:object_r:vendor_displayfeature_device:s0
+ 
++# The AIDL sensors multihal is built from hardware/xiaomi/aidl/sensors, and
++# AOSP's hal_sensors_default_exec patterns match only the .multihal and
++# @X.Y-service.multihal names. Without an entry the binary stays vendor_file,
++# init finds no domain for the service, and the AIDL ISensors instance is
++# never registered. The framework then sits in
++# AidlSensorHalWrapper::connect()/AServiceManager_waitForService() long enough
++# for the system_server watchdog to kill the system process before boot
++# completes. Keep the AIDL HAL in the same domain as the HIDL one so every
++# device-node rule in vendor_sensors.te applies unchanged.
++/(vendor|system/vendor)/bin/hw/android\.hardware\.sensors-service\.xiaomi-multihal u:object_r:hal_sensors_default_exec:s0
++
+ # Xiaomi charging HAL; see hal_micharge_default.te. The binary shipped as a
+ # plain vendor_file blob, so init found no domain transition and the service
+ # never started (lshal shows IMiCharge dead).
+diff --git a/sepolicy/vendor/genfs_contexts b/sepolicy/vendor/genfs_contexts
+index 5acac45..de98f60 100644
+--- a/sepolicy/vendor/genfs_contexts
++++ b/sepolicy/vendor/genfs_contexts
+@@ -66,3 +66,11 @@ genfscon sysfs /devices/platform/soc/soc:vibrator_gpio/leds/vibrator/activate u:
+ genfscon sysfs /devices/platform/soc/soc:vibrator_gpio/leds/vibrator/duration u:object_r:sysfs_leds:s0
+ genfscon sysfs /devices/platform/soc/soc:vibrator_gpio/leds/vibrator/state u:object_r:sysfs_leds:s0
+ genfscon sysfs /devices/platform/soc/soc:vibrator_gpio/leds/vibrator/brightness u:object_r:sysfs_leds:s0
++
++# The touch controller's chip_name and palm_sensor attributes. Both are owned
++# by the sensor stack: sscrpcd reads chip_name to identify the panel before it
++# starts the SSC registry, and the touch detect sub-HAL writes palm_sensor.
++# Stock labels them sysfs_chip_name / vendor_sysfs_touch_node; see file.te for
++# the denials that result when they fall back to the generic sysfs type.
++genfscon sysfs /devices/platform/soc/4ac0000.qcom,qupv3_0_geni_se/4a80000.i2c/i2c-0/0-0028/chip_name u:object_r:sysfs_chip_name:s0
++genfscon sysfs /devices/virtual/touch/touch_dev/palm_sensor u:object_r:vendor_sysfs_touch_node:s0
+diff --git a/sepolicy/vendor/vendor_sensors.te b/sepolicy/vendor/vendor_sensors.te
+index cfbe9c0..8d1a8f7 100644
+--- a/sepolicy/vendor/vendor_sensors.te
++++ b/sepolicy/vendor/vendor_sensors.te
+@@ -12,6 +12,12 @@
+ # while the proximity sensor is armed.
+ allow vendor_sensors proc_tp_proximity_data:file rw_file_perms;
+ 
++# sscrpcd identifies the touch controller through chip_name before it starts
++# the SSC sensor registry. The node is labelled sysfs_chip_name in
++# genfs_contexts; without this rule the read is denied and the registry never
++# comes up, which in turn leaves the sensors HAL blocked in initialize().
++allow vendor_sensors sysfs_chip_name:file r_file_perms;
++
+ # The UDFPS sensors sub-HAL arms the touch controller's FOD mode through the
+ # xiaomi_tp command node, then watches the driver's press flag to deliver the
+ # one-shot doze trigger. The touch feature service normally owns this node;
+@@ -20,3 +26,8 @@ allow vendor_sensors proc_tp_proximity_data:file rw_file_perms;
+ allow hal_sensors_default xiaomi_touch_device:chr_file rw_file_perms;
+ allow hal_sensors_default sysfs:dir r_dir_perms;
+ allow hal_sensors_default sysfs:file r_file_perms;
++
++# The touch detect sub-HAL enables palm rejection by writing palm_sensor. The
++# generic sysfs rule above is read-only and the node has its own label, so the
++# write needs this rule as well.
++allow hal_sensors_default vendor_sysfs_touch_node:file rw_file_perms;
